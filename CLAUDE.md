@@ -69,7 +69,6 @@ pnpm build      # -> dist/, loadable via chrome://extensions -> Load unpacked
 pnpm test       # vitest
 pnpm typecheck  # tsc -b --noEmit
 pnpm lint       # oxlint
-pnpm icons      # regenerate public/icons/*.png from scripts/generate-icons.mjs
 pnpm zip        # build + package dist/ for the Chrome Web Store
 ```
 

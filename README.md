@@ -1,10 +1,11 @@
 <div align="center">
 
-<img src="public/icons/icon128.png" width="72" alt="" />
+<img src="public/icons/logo-banner.png" width="360" alt="LinkedIn → Markdown" />
 
 # LinkedIn → Markdown
 
-**Turn a LinkedIn profile into clean Markdown. Copy it, or download it as a `.md` file.**
+**LinkedIn to Markdown, LinkedIn to text, LinkedIn to MD — turn any LinkedIn profile into clean,
+LLM-friendly Markdown. Copy it, or download it as a `.md` file.**
 
 A Chrome extension. No account, no server, no tracking — everything happens in your browser.
 
@@ -23,9 +24,16 @@ A Chrome extension. No account, no server, no tracking — everything happens in
 
 ## Why
 
-Profiles are worth keeping in plain text: for your own notes, an Obsidian vault, a CV you keep in
-git, a candidate summary you paste into a doc. Copy-pasting from LinkedIn gives you a mess of
-duplicated lines and broken spacing. This gives you Markdown.
+**Pasting a LinkedIn profile into Claude or ChatGPT doesn't work.** LinkedIn sits behind a login
+wall, so chatbots can't fetch a profile URL themselves — they have no session, so they either
+get nothing or a logged-out stub. This extension is a LinkedIn-to-text converter that solves
+that: you're already logged in, in your own browser, so it reads the profile there and converts
+LinkedIn to Markdown (or plain text) you can paste straight into a chat — for a tailored resume,
+a cover letter, interview prep, a candidate summary, whatever the LLM needs the profile for.
+
+Profiles are also worth keeping in plain text for their own sake: your own notes, an Obsidian
+vault, a CV you keep in git. Copy-pasting from LinkedIn gives you a mess of duplicated lines and
+broken spacing. This gives you Markdown.
 
 ## Install
 

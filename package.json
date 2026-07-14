@@ -26,7 +26,6 @@
     "build": "tsc -b && vite build && vite build --config vite.content.config.ts",
     "lint": "oxlint",
     "preview": "vite preview",
-    "icons": "node scripts/generate-icons.mjs",
     "test": "vitest run",
     "typecheck": "tsc -b --noEmit",
     "format": "prettier --write .",
