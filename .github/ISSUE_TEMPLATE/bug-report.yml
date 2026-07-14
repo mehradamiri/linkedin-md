@@ -1,0 +1,31 @@
+name: Bug report
+description: Something else is broken (the popup, copy, download, the build).
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output
+      description: |
+        Right-click the popup → Inspect → Console. Paste any errors.
+      render: shell
+
+  - type: input
+    id: chrome
+    attributes:
+      label: Chrome version
+      placeholder: "141.0.0.0"
+
+  - type: input
+    id: version
+    attributes:
+      label: Extension version
+      placeholder: "0.1.0"

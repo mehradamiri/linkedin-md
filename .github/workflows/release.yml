@@ -1,0 +1,44 @@
+name: Release
+
+# Tag a release to publish a store-ready zip:  git tag v0.1.0 && git push --tags
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify the tag matches the manifest version
+        run: |
+          manifest_version=$(node -p "require('./public/manifest.json').version")
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$manifest_version" != "$tag_version" ]; then
+            echo "Tag $tag_version does not match manifest version $manifest_version" >&2
+            exit 1
+          fi
+
+      - run: pnpm test
+      - run: pnpm build
+
+      - name: Package
+        run: cd dist && zip -r "../linkedin-md-${GITHUB_REF_NAME}.zip" .
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: linkedin-md-*.zip
+          generate_release_notes: true

@@ -1,0 +1,55 @@
+name: Broken extraction
+description: The extension produced empty, missing, or wrong Markdown for a profile.
+labels: ["bug", "selectors"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        LinkedIn changes its page structure without warning, which breaks the scraper. These
+        reports are the most useful contribution to this project — thank you.
+
+  - type: dropdown
+    id: section
+    attributes:
+      label: Which section broke?
+      multiple: true
+      options:
+        - Name / headline / location
+        - About
+        - Experience
+        - Education
+        - Skills
+        - Everything (empty output or an error)
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect, and what did you get?
+    validations:
+      required: true
+
+  - type: textarea
+    id: html
+    attributes:
+      label: Relevant HTML (anonymized)
+      description: |
+        Hugely helpful. In DevTools, right-click the broken section → Copy → Copy outerHTML.
+        **Please remove real names, employers, schools, profile links, image URLs, and any
+        `urn:li:` IDs first** — this is a public issue tracker.
+      render: html
+
+  - type: input
+    id: version
+    attributes:
+      label: Extension version
+      placeholder: "0.1.0"
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I removed personal information from the HTML I pasted above.
+          required: true
