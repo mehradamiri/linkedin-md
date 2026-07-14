@@ -1,6 +1,6 @@
 export interface ExperienceEntry {
   title: string
-  company: string
+  company?: string
   dateRange?: string
   location?: string
   description?: string
@@ -9,6 +9,23 @@ export interface ExperienceEntry {
 export interface EducationEntry {
   school: string
   degree?: string
+  dateRange?: string
+}
+
+export interface SkillEntry {
+  name: string
+  /** As LinkedIn reports it — "15", or "99+" once it stops counting. */
+  endorsements?: string
+}
+
+export interface LanguageEntry {
+  name: string
+  proficiency?: string
+}
+
+export interface CertificationEntry {
+  title: string
+  issuer?: string
   dateRange?: string
 }
 
@@ -22,7 +39,9 @@ export interface Profile {
   about?: string
   experience: ExperienceEntry[]
   education: EducationEntry[]
-  skills: string[]
+  skills: SkillEntry[]
+  languages: LanguageEntry[]
+  certifications: CertificationEntry[]
   /** ISO-8601 timestamp of when the page was read. */
   scrapedAt: string
 }

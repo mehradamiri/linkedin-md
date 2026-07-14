@@ -16,11 +16,10 @@ A Chrome extension. No account, no server, no tracking — everything happens in
 
 ---
 
-> [!WARNING]
-> **Early scaffold.** The extension builds, loads, and the whole popup → capture → copy/download
-> flow works — but the scraper currently returns **placeholder data** instead of reading the real
-> page. Implementing `scrapeProfile()` is the next step, and a great first contribution. See
-> [`.claude/skills/linkedin-selectors`](.claude/skills/linkedin-selectors/SKILL.md).
+> [!NOTE]
+> **It takes a few seconds.** LinkedIn no longer puts your experience, education or skills on
+> the profile page — each section lives on its own page. The extension renders those pages in
+> the background, in your tab, and tells you which one it is reading. Leave the tab open.
 
 ## Why
 
@@ -46,10 +45,12 @@ Open any LinkedIn profile (`linkedin.com/in/…`) and click the extension icon.
 
 ## Privacy
 
-The extension reads the profile page you are looking at, in your browser, when you click it.
+The extension reads the profile you are looking at, in your browser, when you click it.
 That's the whole story:
 
-- **No network requests.** Nothing is uploaded anywhere. There is no server.
+- **Nothing is uploaded.** There is no server, no backend, no third party. The only pages it
+  requests are that profile's own LinkedIn section pages (`/details/experience/`, …) — the same
+  ones you'd open by clicking "Show all" — loaded inside the tab you're already on.
 - **No analytics, no telemetry, no remote code.**
 - **No stored data.** The Markdown lives in the popup until you copy or download it.
 - **`activeTab` only** — it can only see a tab you explicitly opened it on, and never runs in the
@@ -60,7 +61,7 @@ Details in [PRIVACY.md](PRIVACY.md).
 ## Scope
 
 **In scope for v1:** profile pages (`/in/…`) — name, headline, location, about, experience,
-education, skills.
+education, skills, languages, and licenses & certifications.
 
 **Out of scope:** posts, jobs, company pages, bulk export, and anything that talks to LinkedIn's
 private APIs or automates browsing on your behalf. This is a "read the page in front of you"

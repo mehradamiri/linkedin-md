@@ -1,10 +1,20 @@
 import { useCallback, useEffect, useState } from "react"
-import { SCRAPE_REQUEST, type ScrapeResponse } from "@/lib/messages"
+import {
+  isScrapeProgress,
+  SCRAPE_REQUEST,
+  type ScrapeResponse,
+} from "@/lib/messages"
 import { isProfileUrl } from "@/lib/scrape"
 import type { Profile } from "@/lib/types"
 
+export interface Progress {
+  section: string
+  done: number
+  total: number
+}
+
 export type CaptureState =
-  | { status: "loading" }
+  | { status: "loading"; progress?: Progress }
   | { status: "not-a-profile" }
   | { status: "error"; message: string }
   | { status: "ready"; profile: Profile }
@@ -57,6 +67,31 @@ export function useProfileCapture() {
   }, [])
 
   useEffect(run, [run])
+
+  // The content script reports which section it is reading; each one is a page load,
+  // so the capture takes long enough that silence would look like a hang.
+  useEffect(() => {
+    if (typeof chrome === "undefined" || !chrome.runtime?.onMessage) return
+
+    const onProgress = (message: unknown) => {
+      if (!isScrapeProgress(message)) return
+      setState((current) =>
+        current.status === "loading"
+          ? {
+              status: "loading",
+              progress: {
+                section: message.section,
+                done: message.done,
+                total: message.total,
+              },
+            }
+          : current,
+      )
+    }
+
+    chrome.runtime.onMessage.addListener(onProgress)
+    return () => chrome.runtime.onMessage.removeListener(onProgress)
+  }, [])
 
   return { state, retry: run }
 }

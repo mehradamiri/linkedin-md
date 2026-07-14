@@ -1,0 +1,68 @@
+<!--
+  Anonymized fixture of /in/{handle}/details/experience/, mirroring the live DOM:
+    - the "Experience" heading is a plain <div>; the only real <h2>s in <main> are ads
+    - a company with several roles is a <div> holding a company header plus a <ul> of
+      sub-roles; a standalone role is a bare <div> sibling of that group, NOT an <li>
+      (so no list selector can find both — rows are a sibling group)
+    - the sub-role rows carry no company text line at all; the company is only known
+      from the group header and the /company/ href
+    - ad units and footer cards live inside <main> and must be filtered out
+  Names and text are fictional.
+-->
+<main class="_9f2e11ab">
+  <div class="_aa01bb02">
+    <div class="_cc03dd04"></div>
+    <div class="_ee05ff06"><div><span>Experience</span></div></div>
+    <div class="_1122aabb"></div>
+
+    <div class="_group001">
+      <a href="https://www.linkedin.com/company/3608/" class="_lnk01">
+        <img alt="" />
+        <div class="_hdr01"><p>Acme Corp</p></div>
+        <div class="_hdr02"><span>Full-time · 6 yrs 7 mos</span></div>
+      </a>
+      <ul class="_ul001">
+        <li class="_li001">
+          <div class="_r01"><p>Principal Software Engineer</p></div>
+          <div class="_r02"><span>Mar 2024 - Present · 2 yrs 5 mos</span></div>
+          <div class="_r03"><span>On-site</span></div>
+          <div class="_r04"><span>Anything GenAI related, from acceleration to designing new solutions</span></div>
+        </li>
+        <li class="_li002">
+          <div class="_r01"><p>Senior Engineering Manager</p></div>
+          <div class="_r02"><span>Jan 2020 - Mar 2024 · 4 yrs 3 mos</span></div>
+          <div class="_r03"><span>Berlin, Germany</span></div>
+          <div class="_r04"><span>Managing the platform team</span></div>
+        </li>
+      </ul>
+    </div>
+
+    <div class="_single01">
+      <a href="https://www.linkedin.com/company/9910/" class="_lnk02">
+        <img alt="" />
+        <div class="_s01"><p>CEO</p></div>
+        <div class="_s02"><span>Globex</span></div>
+        <div class="_s03"><span>May 2016 - Jan 2020 · 3 yrs 9 mos</span></div>
+        <div class="_s04"><span>Munich</span></div>
+      </a>
+      <div class="_s05"><span>Globex was acquired by Acme Corp</span></div>
+      <!-- Skill chips hang off a role as /overlay/ links. They are controls, not
+           profile content, and must not land in the description. -->
+      <a href="https://www.linkedin.com/in/jane-doe/overlay/886585137/skill-associations-details/">
+        <span>Competitive Analysis</span>
+      </a>
+    </div>
+  </div>
+
+  <section class="_adsect01">
+    <h2>Ad Options</h2>
+    <div>Promoted</div>
+  </section>
+
+  <aside class="_aside01">
+    <h3>More profiles for you</h3>
+    <div class="_p1"><div>Kim Rivera</div><div>· 2nd</div></div>
+    <div class="_p2"><div>Sam Okafor</div><div>· 2nd</div></div>
+    <div class="_p3"><div>Lee Zhang</div><div>· 3rd</div></div>
+  </aside>
+</main>

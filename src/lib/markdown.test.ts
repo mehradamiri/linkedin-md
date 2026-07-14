@@ -16,12 +16,21 @@ const profile: Profile = {
       company: "Acme",
       dateRange: "2022 — Present",
       location: "Remote",
+      description: "Owns the platform.",
     },
   ],
   education: [
     { school: "TU Berlin", degree: "BSc CS", dateRange: "2015 — 2019" },
   ],
-  skills: ["TypeScript", "Rust"],
+  skills: [{ name: "TypeScript", endorsements: "3" }, { name: "Rust" }],
+  languages: [{ name: "German", proficiency: "Native" }],
+  certifications: [
+    {
+      title: "Cloud Architect",
+      issuer: "Example Co",
+      dateRange: "Issued 2021",
+    },
+  ],
   scrapedAt: "2026-07-14T10:00:00.000Z",
 }
 
@@ -30,24 +39,40 @@ describe("profileToMarkdown", () => {
     const md = profileToMarkdown(profile)
 
     expect(md).toContain("# Jane Doe")
+    expect(md).toContain("> Staff Engineer")
     expect(md).toContain("## Experience")
-    expect(md).toContain("**Acme** · 2022 — Present · Remote")
+    expect(md).toContain("### Staff Engineer — Acme")
+    expect(md).toContain("2022 — Present · Remote")
+    expect(md).toContain("Owns the platform.")
     expect(md).toContain("## Education")
-    expect(md).toContain("TypeScript, Rust")
+    expect(md).toContain("BSc CS · 2015 — 2019")
+    expect(md).toContain("- TypeScript · 3 endorsements")
+    expect(md).toContain("- Rust")
+    expect(md).toContain("- German — Native")
+    expect(md).toContain("- Cloud Architect — Example Co · Issued 2021")
+    expect(md).toContain("captured 2026-07-14")
   })
 
-  it("omits sections with no entries", () => {
+  it("omits sections with no entries and never throws on missing fields", () => {
     const md = profileToMarkdown({
       ...profile,
+      headline: undefined,
+      location: undefined,
       about: undefined,
-      experience: [],
+      experience: [{ title: "Advisor" }],
       education: [],
       skills: [],
+      languages: [],
+      certifications: [],
     })
 
     expect(md).not.toContain("## About")
-    expect(md).not.toContain("## Experience")
+    expect(md).not.toContain("## Education")
     expect(md).not.toContain("## Skills")
+    expect(md).not.toContain("## Languages")
+    expect(md).not.toContain("## Certifications")
+    expect(md).toContain("### Advisor")
+    expect(md).not.toContain("undefined")
   })
 })
 

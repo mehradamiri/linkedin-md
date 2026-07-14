@@ -1,26 +1,30 @@
 import type { Profile } from "@/lib/types"
 
 /**
- * TODO: proper serializer — YAML front matter, Markdown escaping of profile text,
- * configurable sections. This minimal version exists so the popup has something to render.
+ * Serializes a Profile into résumé-style Markdown. Tolerant by design: a section
+ * is emitted only when it produced records, and no field is ever required.
  */
 export function profileToMarkdown(profile: Profile): string {
-  const lines = [`# ${profile.name}`, ""]
+  const lines: string[] = [`# ${profile.name}`, ""]
 
   if (profile.headline) lines.push(`> ${profile.headline}`, "")
-  if (profile.location) lines.push(`📍 ${profile.location}`, "")
-  if (profile.about) lines.push("## About", "", profile.about, "")
+  if (profile.location) lines.push(profile.location, "")
+
+  if (profile.about) {
+    lines.push("## About", "", profile.about, "")
+  }
 
   if (profile.experience.length > 0) {
     lines.push("## Experience", "")
     for (const role of profile.experience) {
-      lines.push(`### ${role.title}`, "")
       lines.push(
-        [`**${role.company}**`, role.dateRange, role.location]
-          .filter(Boolean)
-          .join(" · "),
+        role.company
+          ? `### ${role.title} — ${role.company}`
+          : `### ${role.title}`,
         "",
       )
+      const meta = [role.dateRange, role.location].filter(Boolean).join(" · ")
+      if (meta) lines.push(meta, "")
       if (role.description) lines.push(role.description, "")
     }
   }
@@ -29,18 +33,50 @@ export function profileToMarkdown(profile: Profile): string {
     lines.push("## Education", "")
     for (const school of profile.education) {
       lines.push(`### ${school.school}`, "")
-      lines.push(
-        [school.degree, school.dateRange].filter(Boolean).join(" · "),
-        "",
-      )
+      const meta = [school.degree, school.dateRange].filter(Boolean).join(" · ")
+      if (meta) lines.push(meta, "")
     }
   }
 
   if (profile.skills.length > 0) {
-    lines.push("## Skills", "", profile.skills.join(", "), "")
+    lines.push("## Skills", "")
+    for (const skill of profile.skills) {
+      lines.push(
+        skill.endorsements
+          ? `- ${skill.name} · ${skill.endorsements} endorsements`
+          : `- ${skill.name}`,
+      )
+    }
+    lines.push("")
   }
 
-  lines.push("---", "", `Source: [${profile.url}](${profile.url})`, "")
+  if (profile.languages.length > 0) {
+    lines.push("## Languages", "")
+    for (const language of profile.languages) {
+      lines.push(
+        language.proficiency
+          ? `- ${language.name} — ${language.proficiency}`
+          : `- ${language.name}`,
+      )
+    }
+    lines.push("")
+  }
+
+  if (profile.certifications.length > 0) {
+    lines.push("## Certifications", "")
+    for (const cert of profile.certifications) {
+      const meta = [cert.issuer, cert.dateRange].filter(Boolean).join(" · ")
+      lines.push(meta ? `- ${cert.title} — ${meta}` : `- ${cert.title}`)
+    }
+    lines.push("")
+  }
+
+  lines.push(
+    "---",
+    "",
+    `Source: [${profile.url}](${profile.url}) · captured ${profile.scrapedAt.slice(0, 10)}`,
+    "",
+  )
 
   return `${lines.join("\n").trim()}\n`
 }

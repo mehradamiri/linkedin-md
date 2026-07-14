@@ -7,9 +7,10 @@ Guidance for Claude Code when working in this repository.
 A Manifest V3 Chrome extension that turns a LinkedIn **profile** page into clean Markdown,
 which the user can copy to the clipboard or download as a `.md` file. Open source, MIT.
 
-**Status: scaffold.** The pipeline (popup → inject → message → render → copy/download) works
-end to end, but `scrapeProfile()` returns placeholder data and `profileToMarkdown()` is a
-minimal serializer. Those two are the next things to build.
+**Status: working**, verified against a live profile. Extraction covers the header, About,
+experience (including several roles grouped under one company), education, skills, languages
+and certifications. The DOM rules and the evidence behind them live in
+`.claude/skills/linkedin-selectors` — read it before touching the scraping layer.
 
 ## Stack
 
@@ -27,15 +28,18 @@ src/
   content/      injected into the LinkedIn tab; reads the DOM, replies with a Profile
   lib/          shared, framework-free logic
     types.ts    Profile — the contract between content script and popup
-    scrape.ts   Document -> Profile   (TODO: real DOM extraction)
-    markdown.ts Profile  -> string    (TODO: full serializer)
-    messages.ts the typed request/response pair
+    selectors.ts every LinkedIn DOM assumption (heading text, row groups, junk filters)
+    scrape.ts   Document -> Profile / entries   (pure — works on any LinkedIn document)
+    markdown.ts Profile  -> string
+    messages.ts the typed request/response pair, plus per-section progress
   components/ui shadcn components (generated — edit via the CLI, not by hand)
 ```
 
-Data flow: popup opens → `chrome.scripting.executeScript` injects `content.js` into the
-active tab → popup sends `SCRAPE_REQUEST` → content script runs `scrapeProfile(document, href)`
-→ popup renders Markdown and offers copy/download.
+Data flow: popup opens → `chrome.scripting.executeScript` injects `content.js` into the active
+tab → popup sends `SCRAPE_REQUEST` → the content script reads the header and About from the
+page, then renders each `/in/{handle}/details/{section}/` page in a **hidden same-origin
+iframe** and reads it with the same extractor → it reports progress per section → the popup
+renders Markdown and offers copy/download.
 
 ### Load-bearing decisions
 
@@ -46,8 +50,14 @@ active tab → popup sends `SCRAPE_REQUEST` → content script runs `scrapeProfi
   the user explicitly opened the popup on. This keeps the install prompt quiet and the
   privacy story honest — do not add `host_permissions` or a declarative `content_scripts`
   block without a real reason.
-- **`scrapeProfile` takes a `Document`, not `window`.** It stays pure so it can be tested
-  against saved HTML fixtures with no browser.
+- **Detail pages are read in a hidden same-origin iframe.** The profile page no longer contains
+  experience/education/skills at all — they live only on `/details/{section}/`, and that markup
+  exists only after React hydrates (fetching the HTML returns an empty shell). Framing LinkedIn
+  inside LinkedIn is same-origin, so it needs no extra permission and no background worker.
+  Do not "fix" this with `fetch()`, `host_permissions`, or a service worker.
+- **The extractors take a `Document`, not `window`.** `scrapeSection`/`scrapeMainProfile` stay
+  pure so they can run against saved fixtures with no browser — and so the same code reads the
+  profile page and each detail page.
 - **Everything is local.** No network calls, no analytics, no remote code. If a change would
   send profile data anywhere, it does not belong in this project.
 
@@ -79,9 +89,19 @@ pnpm zip        # build + package dist/ for the Chrome Web Store
 
 ## Gotchas
 
-- LinkedIn renders most strings twice — once visible with `aria-hidden="true"`, once inside
-  `.visually-hidden` for screen readers. Reading `textContent` naively gives you every value
-  doubled. Read the `aria-hidden` copy.
+Almost every intuition about this DOM is wrong; the skill has the full table and the evidence.
+The ones that bite hardest:
+
+- **There is no `<h1>`.** The name is an `<h2>`. Section headings are plain `<div>`s — the only
+  real `<h2>`s inside `<main>` are ad units. Anchor on heading *text*, never on a tag or class.
+- **Rows are not `<li>`.** They are a sibling group of `<div>`s; a company with several roles
+  wraps a `<ul>` of sub-roles while a standalone role is a bare `<div>` next to it.
+- **Hydration is slow.** Poll for rows; a fixed delay reads an empty section and looks exactly
+  like a broken selector.
+- **An empty section still renders a page** ("Nothing to see for now") and will happily scrape
+  as two entries if you let it — see `isEmptyState`.
 - The popup can inject `content.js` into the same tab repeatedly; the content script guards
   with `window.__linkedinMdReady` so it doesn't register its listener twice.
+- Fixtures encode the assumptions of whoever wrote the selectors. **Verify against a live
+  profile**, not just `pnpm test` — every bug listed above passed the unit tests first.
 - Never commit real scraped profiles as fixtures — anonymize them (see the skill).

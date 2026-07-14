@@ -4,6 +4,7 @@ import {
   CopyIcon,
   DownloadIcon,
   FileTextIcon,
+  MapPinIcon,
   RefreshCwIcon,
   SearchXIcon,
   TriangleAlertIcon,
@@ -20,13 +21,17 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
+import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Toaster } from "@/components/ui/sonner"
 import { markdownFilename, profileToMarkdown } from "@/lib/markdown"
 import type { Profile } from "@/lib/types"
-import { useProfileCapture } from "@/popup/use-profile-capture"
+import {
+  useProfileCapture,
+  type Progress as CaptureProgress,
+} from "@/popup/use-profile-capture"
 
 function Header() {
   return (
@@ -42,19 +47,33 @@ function Header() {
           Copy or download this profile
         </span>
       </div>
-      <Badge variant="secondary" className="ml-auto">
-        Preview
-      </Badge>
     </header>
   )
 }
 
-function LoadingState() {
+function LoadingState({ progress }: { progress?: CaptureProgress }) {
+  const pct = progress ? (progress.done / progress.total) * 100 : 8
+
   return (
-    <div className="flex flex-col gap-3 px-4 py-3">
-      <Skeleton className="h-5 w-40" />
-      <Skeleton className="h-4 w-56" />
-      <Skeleton className="h-52 w-full" />
+    <div className="flex flex-col gap-3 px-4 py-4">
+      <div className="flex flex-col gap-2">
+        <div className="flex items-baseline justify-between">
+          <span className="text-sm font-medium">
+            {progress ? `Reading ${progress.section}…` : "Reading profile…"}
+          </span>
+          {progress ? (
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {progress.done}/{progress.total}
+            </span>
+          ) : null}
+        </div>
+        <Progress value={pct} />
+        <p className="text-xs text-muted-foreground">
+          Each section lives on its own LinkedIn page, so this takes a few
+          seconds. Leave the tab open.
+        </p>
+      </div>
+      <Skeleton className="h-40 w-full" />
     </div>
   )
 }
@@ -103,6 +122,28 @@ function ErrorState({
   )
 }
 
+function SectionBadges({ profile }: { profile: Profile }) {
+  const counts: Array<[number, string, string]> = [
+    [profile.experience.length, "role", "roles"],
+    [profile.education.length, "school", "schools"],
+    [profile.skills.length, "skill", "skills"],
+    [profile.languages.length, "language", "languages"],
+    [profile.certifications.length, "certification", "certifications"],
+  ]
+  const present = counts.filter(([count]) => count > 0)
+  if (present.length === 0) return null
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {present.map(([count, singular, plural]) => (
+        <Badge key={plural} variant="secondary">
+          {count} {count === 1 ? singular : plural}
+        </Badge>
+      ))}
+    </div>
+  )
+}
+
 function ProfileView({ profile }: { profile: Profile }) {
   const [copied, setCopied] = useState(false)
   const markdown = useMemo(() => profileToMarkdown(profile), [profile])
@@ -132,16 +173,18 @@ function ProfileView({ profile }: { profile: Profile }) {
         <div className="flex flex-col gap-0.5">
           <span className="truncate text-sm font-semibold">{profile.name}</span>
           {profile.headline ? (
-            <span className="truncate text-xs text-muted-foreground">
+            <span className="line-clamp-2 text-xs text-muted-foreground">
               {profile.headline}
             </span>
           ) : null}
+          {profile.location ? (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <MapPinIcon className="size-3 shrink-0" />
+              <span className="truncate">{profile.location}</span>
+            </span>
+          ) : null}
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          <Badge variant="secondary">{profile.experience.length} roles</Badge>
-          <Badge variant="secondary">{profile.education.length} schools</Badge>
-          <Badge variant="secondary">{profile.skills.length} skills</Badge>
-        </div>
+        <SectionBadges profile={profile} />
       </div>
 
       <Separator />
@@ -179,7 +222,9 @@ export function Popup() {
     <div className="w-104 bg-background text-foreground">
       <Header />
       <Separator />
-      {state.status === "loading" ? <LoadingState /> : null}
+      {state.status === "loading" ? (
+        <LoadingState progress={state.progress} />
+      ) : null}
       {state.status === "not-a-profile" ? <NotAProfile /> : null}
       {state.status === "error" ? (
         <ErrorState message={state.message} onRetry={retry} />

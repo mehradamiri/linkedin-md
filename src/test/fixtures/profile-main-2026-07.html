@@ -1,0 +1,76 @@
+<!--
+  Anonymized fixture of the 2026 main profile page, mirroring the live DOM:
+    - the name is an <h2> (there is NO <h1> anywhere on the page)
+    - the top card carries headline, then location followed by a "Contact info" link
+    - the profile page itself renders NO experience/education/skills sections; they
+      exist only on /details/{section}/ pages (see the other fixtures)
+    - class names are hashed per build, so nothing here may be selected by class
+  Names and text are fictional.
+-->
+<main class="_9f2e11ab">
+  <section class="_7347ac35">
+    <div class="c8d248ed">
+      <div class="d4e5f6a7">
+        <h2 class="e91b7f2a">Jane Doe</h2>
+        <span class="b0c1d2e3">· 1st</span>
+      </div>
+      <div class="f0a12bcd">Principal Software Engineer · GenAI platforms</div>
+      <!-- The current company/school chips: no link, no logo alt, nothing to select
+           on. They render once as a combined line and again as standalone lines —
+           that duplication is the only thing distinguishing them from the location. -->
+      <div class="_chip01">
+        <p><span>Acme Corp</span> · <span>Example University</span></p>
+      </div>
+      <div class="a1b2c3d4">
+        <span>Berlin, Germany</span>
+        <span>·</span>
+      </div>
+      <div class="_chip02">
+        <div><p><span>Acme Corp</span></p></div>
+        <div><p><span>Example University</span></p></div>
+      </div>
+      <div class="cc90d1e2">
+        <span>16,752 followers</span>
+        <span>·</span>
+        <span>500+ connections</span>
+      </div>
+      <div class="e5f6a7b8">Ali is a mutual connection</div>
+      <div class="btnrow01">
+        <button>Message</button>
+        <button>Book an appointment</button>
+        <button>More</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="_11aa22bb">
+    <div class="hh01"><div><span>About</span></div></div>
+    <div class="ab12cd34">
+      <div class="cd34ef56">
+        <p>I build GenAI systems, from acceleration research to new product design.</p>
+        <p>Previously payments infrastructure at Globex.</p>
+      </div>
+      <button>…see more</button>
+    </div>
+  </section>
+
+  <section class="_ff56aa78">
+    <h2 class="hh07">Activity</h2>
+    <div>16,752 followers</div>
+  </section>
+
+  <section class="_adsect01">
+    <h2>Ad Options</h2>
+    <div>Promoted</div>
+  </section>
+
+  <!-- LinkedIn's own footer renders inside <main> and links to "About". A heading is
+       never a link, so this must not be mistaken for the profile's About section. -->
+  <footer class="_ftr01">
+    <nav>
+      <a href="/about/">About</a>
+      <a href="/accessibility/">Accessibility</a>
+      <a href="/legal/privacy-policy">Privacy &amp; Terms</a>
+    </nav>
+  </footer>
+</main>
