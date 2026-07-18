@@ -37,7 +37,9 @@ broken spacing. This gives you Markdown.
 
 ## Install
 
-Not on the Chrome Web Store yet. To run it now:
+[**Get it from the Chrome Web Store**](https://chromewebstore.google.com/detail/linkedin-to-markdown/oommhmdoldhocnbfggngnihdfdfbmlmd).
+
+Or run it from source:
 
 ```bash
 git clone https://github.com/mehradamiri/linkedin-md
