@@ -7,9 +7,11 @@ Guidance for Claude Code when working in this repository.
 A Manifest V3 Chrome extension that turns a LinkedIn **profile** page into clean Markdown,
 which the user can copy to the clipboard or download as a `.md` file. Open source, MIT.
 
-**Status: working**, verified against a live profile. Extraction covers the header, About,
-experience (including several roles grouped under one company), education, skills, languages
-and certifications. The DOM rules and the evidence behind them live in
+**Status: working**, verified against live profiles. Extraction covers the header (name,
+headline, location, external links), About, experience (including several roles grouped under
+one company), education, skills, languages and certifications, plus publications, projects,
+volunteering, honors, courses, patents and organizations as generic entries in
+`Profile.extras`. The DOM rules and the evidence behind them live in
 `.claude/skills/linkedin-selectors` — read it before touching the scraping layer.
 
 ## Stack
@@ -58,8 +60,28 @@ renders Markdown and offers copy/download.
 - **The extractors take a `Document`, not `window`.** `scrapeSection`/`scrapeMainProfile` stay
   pure so they can run against saved fixtures with no browser — and so the same code reads the
   profile page and each detail page.
-- **Everything is local.** No network calls, no analytics, no remote code. If a change would
-  send profile data anywhere, it does not belong in this project.
+- **An unfilled section must be detected, not waited out.** Most members have none of the
+  optional sections, and a section with no rows is indistinguishable from one that has not
+  hydrated. `isEmptySection` reads LinkedIn's placeholder copy so the reader stops immediately;
+  without it every unfilled section costs the full polling budget, and reading twelve sections
+  becomes minutes. Sections are read `CONCURRENCY` at a time for the same reason.
+- **The capture outlives the popup.** The popup closes on any click outside it, so the content
+  script owns the run: a reopened popup joins the in-flight capture or is handed the finished
+  one. Never move that state into the popup, and never restart a capture that is already
+  running — each restart is another dozen LinkedIn page loads.
+- **A section that failed is not a section that is empty.** `readSection` distinguishes `ok` /
+  `empty` / `unreadable`, and anything unreadable lands in `Profile.warnings` and is named in
+  the Markdown. Silently omitting it produces an export that looks complete and is not.
+- **Everything is local, except where the user explicitly sends it.** No network calls, no
+  analytics, no remote code, no backend. The one outbound path is the "Send to AI" button, which
+  acts on a click, on a destination the user picked. Anything that moves profile data without
+  that click does not belong in this project — and `PRIVACY.md` has to keep matching the code.
+- **The AI handoff is clipboard-first.** Typing into ChatGPT or Claude for the user would need
+  `host_permissions` for those sites plus a composer selector per service, maintained against
+  someone else's redesign schedule. Instead the Markdown always goes to the clipboard, and rides
+  in the URL where the service reads an opening prompt from one and the profile fits under
+  `MAX_PROMPT_URL`. A profile too long for the URL is handed over by clipboard rather than sent
+  truncated — the popup says which will happen before the click.
 
 ## Commands
 
@@ -101,6 +123,14 @@ The ones that bite hardest:
   as two entries if you let it — see `isEmptyState`.
 - The popup can inject `content.js` into the same tab repeatedly; the content script guards
   with `window.__linkedinMdReady` so it doesn't register its listener twice.
+- **The top card's company/school chips sit exactly where the location does.** With several
+  chips LinkedIn renders them once combined ("Acme · Example University") and again standing
+  alone; with a *single* chip it renders that one chip twice. Both patterns have to be matched
+  — handling only the first exported "Gates Foundation" as Bill Gates's location, on the
+  commonest profile shape there is, while the two-chip fixture went on passing.
+- **A short line is not a location.** "Led the platform team" is four words with no full stop.
+  `looksLikeLocation` needs a positive signal (a comma, a work mode, a geographic word, or
+  title case), never just a word count.
 - Fixtures encode the assumptions of whoever wrote the selectors. **Verify against a live
   profile**, not just `pnpm test` — every bug listed above passed the unit tests first.
 - Never commit real scraped profiles as fixtures — anonymize them (see the skill).

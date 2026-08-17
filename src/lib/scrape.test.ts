@@ -13,6 +13,7 @@ import {
   scrapeMainProfile,
   scrapeSection,
 } from "@/lib/scrape"
+import { isEmptySection } from "@/lib/selectors"
 
 const URL = "https://www.linkedin.com/in/jane-doe"
 
@@ -59,6 +60,7 @@ describe("scrapeSection: experience", () => {
     expect(experience[0]).toEqual({
       title: "Principal Software Engineer",
       company: "Acme Corp",
+      employmentType: "Full-time",
       dateRange: "Mar 2024 - Present · 2 yrs 5 mos",
       location: "On-site",
       description:
@@ -196,5 +198,248 @@ describe("isDateRangeLine", () => {
     ["On-site", false],
   ])("%s -> %s", (line, expected) => {
     expect(isDateRangeLine(line)).toBe(expected)
+  })
+})
+
+describe("scrapeHeader: a top card with a single company chip", () => {
+  // Bill Gates's card, which is the common shape: one chip, rendered twice, with no
+  // combined "Acme · University" line to give it away.
+  const doc = parse(`
+    <main><section>
+      <div><h2>Bill Gates</h2></div>
+      <div>Chair, Gates Foundation and Founder, Breakthrough Energy</div>
+      <div><p>Gates Foundation</p></div>
+      <div>Seattle, Washington, United States</div>
+      <div>·</div>
+      <div><p>Gates Foundation</p></div>
+      <div><a href="https://gatesnot.es/tgn">https://gatesnot.es/tgn</a></div>
+      <div>40,573,718 followers</div>
+      <div>Followed by Ada and 54 others you know</div>
+    </section></main>
+  `)
+  const profile = scrapeMainProfile(doc, URL)
+
+  it("does not promote the chip into the location", () => {
+    expect(profile.headline).toBe(
+      "Chair, Gates Foundation and Founder, Breakthrough Energy",
+    )
+    expect(profile.location).toBe("Seattle, Washington, United States")
+  })
+
+  it("collects the member's own site", () => {
+    expect(profile.websites).toEqual(["https://gatesnot.es/tgn"])
+  })
+})
+
+describe("experience rows with an employment type", () => {
+  const doc = parse(`
+    <main><section>
+      <div>Experience</div>
+      <div>
+        <div>
+          <div><a href="/company/acme/">Acme Corp</a></div>
+          <div>Full-time</div>
+          <div>6 yrs</div>
+          <ul>
+            <li>
+              <div>Staff Engineer</div><div>Full-time</div>
+              <div>Jan 2022 - Present</div><div>Berlin, Germany</div>
+            </li>
+            <li>
+              <div>Senior Engineer</div><div>Full-time</div>
+              <div>Jan 2020 - Jan 2022</div><div>Berlin, Germany</div>
+            </li>
+          </ul>
+        </div>
+        <div>
+          <div>Advisor</div><div>Other Co · Part-time</div>
+          <div>2019 - 2020</div>
+          <div>Led the platform team</div>
+          <div>• Shipped the billing rewrite</div>
+        </div>
+      </div>
+    </section></main>
+  `)
+  const experience = scrapeSection(doc, "experience")
+
+  it("does not file a sub-role's company under its employment type", () => {
+    expect(experience[0]).toMatchObject({
+      title: "Staff Engineer",
+      company: "Acme Corp",
+      employmentType: "Full-time",
+      location: "Berlin, Germany",
+    })
+    expect(experience.map((role) => role.company)).not.toContain("Full-time")
+  })
+
+  it("splits a standalone role's company from its employment type", () => {
+    expect(experience[2]).toMatchObject({
+      title: "Advisor",
+      company: "Other Co",
+      employmentType: "Part-time",
+    })
+  })
+
+  it("does not mistake a short description opener for a location", () => {
+    expect(experience[2].location).toBeUndefined()
+    expect(experience[2].description).toContain("Led the platform team")
+  })
+
+  it("keeps bulleted description lines, as Markdown bullets", () => {
+    expect(experience[2].description).toContain("- Shipped the billing rewrite")
+  })
+})
+
+describe("rows whose text ends in the word 'logo'", () => {
+  const doc = parse(`
+    <main><section>
+      <div>Experience</div>
+      <div>
+        <div>
+          <div>Acme Corp logo</div><div>Designer</div>
+          <div>Acme Corp · Full-time</div><div>2019 - 2020</div>
+        </div>
+        <div>
+          <div>Brand Lead</div><div>Globex</div><div>2017 - 2019</div>
+          <div>We redesigned the company logo</div>
+        </div>
+      </div>
+    </section></main>
+  `)
+  const experience = scrapeSection(doc, "experience")
+
+  it("drops an image caption that echoes a name the row already carries", () => {
+    expect(experience[0].title).toBe("Designer")
+  })
+
+  it("keeps a sentence that merely ends in 'logo'", () => {
+    expect(experience[1].description).toContain(
+      "We redesigned the company logo",
+    )
+  })
+})
+
+describe("education and certification rows with more than two lines", () => {
+  const educationDoc = parse(`
+    <main><section>
+      <div>Education</div>
+      <div>
+        <div>
+          <div>Stanford University</div><div>Master's degree</div>
+          <div>Computer Science</div><div>2010 - 2012</div>
+          <div>Grade: 3.9</div>
+        </div>
+        <div>
+          <div>TU Berlin</div><div>BSc</div><div>2006 - 2010</div>
+        </div>
+      </div>
+    </section></main>
+  `)
+
+  it("keeps the field of study and the grade instead of dropping them", () => {
+    const [stanford] = scrapeSection(educationDoc, "education")
+    expect(stanford).toEqual({
+      school: "Stanford University",
+      degree: "Master's degree",
+      dateRange: "2010 - 2012",
+      description: "Computer Science\nGrade: 3.9",
+    })
+  })
+
+  const certDoc = parse(`
+    <main><section>
+      <div>Licenses &amp; certifications</div>
+      <div>
+        <div>
+          <div>AWS Certified</div><div>Amazon Web Services</div>
+          <div>Issued Mar 2020</div><div>Expires Mar 2023</div>
+          <div>Credential ID ABC123</div><div>Show credential</div>
+        </div>
+        <div>
+          <div>CKA</div><div>The Linux Foundation</div>
+          <div>Issued Jan 2021</div>
+        </div>
+      </div>
+    </section></main>
+  `)
+
+  it("keeps the expiry date out of the issuer field, and the credential id", () => {
+    const [aws] = scrapeSection(certDoc, "certifications")
+    expect(aws).toEqual({
+      title: "AWS Certified",
+      issuer: "Amazon Web Services",
+      dateRange: "Issued Mar 2020 · Expires Mar 2023",
+      credentialId: "ABC123",
+    })
+  })
+})
+
+describe("skills whose endorsement count is an overlay chip", () => {
+  const doc = parse(`
+    <main><section>
+      <div>Skills</div>
+      <div>
+        <div>
+          <div>TypeScript</div>
+          <a href="/in/jane/overlay/endorsements/">15 endorsements</a>
+        </div>
+        <div>
+          <div>Rust</div>
+        </div>
+      </div>
+    </section></main>
+  `)
+
+  it("reads the count back out of the chip textLines strips", () => {
+    expect(scrapeSection(doc, "skills")).toEqual([
+      { name: "TypeScript", endorsements: "15" },
+      { name: "Rust" },
+    ])
+  })
+})
+
+describe("sections beyond the core five", () => {
+  const doc = parse(`
+    <main><section>
+      <div>Publications</div>
+      <div>
+        <div>
+          <div>On Distributed Systems</div><div>ACM Queue</div>
+          <div>Mar 2021</div><div>A survey of consensus protocols.</div>
+        </div>
+        <div>
+          <div>On Caching</div><div>USENIX</div><div>Jun 2019</div>
+        </div>
+      </div>
+    </section></main>
+  `)
+
+  it("reads them as generic title/subtitle/date entries", () => {
+    expect(scrapeSection(doc, "publications")).toEqual([
+      {
+        title: "On Distributed Systems",
+        subtitle: "ACM Queue",
+        dateRange: "Mar 2021",
+        description: "A survey of consensus protocols.",
+      },
+      { title: "On Caching", subtitle: "USENIX", dateRange: "Jun 2019" },
+    ])
+  })
+})
+
+describe("isEmptySection", () => {
+  it("recognises a details page the member never filled in", () => {
+    const doc = parse(`
+      <main><section>
+        <div>Skills</div>
+        <div>Nothing to see for now</div>
+        <div>Skills that Jane adds will appear here.</div>
+      </section></main>
+    `)
+    expect(isEmptySection(doc, "skills")).toBe(true)
+  })
+
+  it("does not call a populated page empty", () => {
+    expect(isEmptySection(parse(skillsHtml), "skills")).toBe(false)
   })
 })

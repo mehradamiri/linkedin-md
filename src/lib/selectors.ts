@@ -22,6 +22,13 @@ export type SectionKey =
   | "skills"
   | "languages"
   | "certifications"
+  | "publications"
+  | "projects"
+  | "volunteering"
+  | "honors"
+  | "courses"
+  | "patents"
+  | "organizations"
 
 /** Heading text as it appears on the profile and on /details/{slug}/. */
 export const SECTION_TITLES: Record<SectionKey, string[]> = {
@@ -35,6 +42,39 @@ export const SECTION_TITLES: Record<SectionKey, string[]> = {
     "Licenses and certifications",
     "Certifications",
   ],
+  publications: ["Publications"],
+  projects: ["Projects"],
+  volunteering: [
+    "Volunteering",
+    "Volunteer experience",
+    "Volunteering experience",
+  ],
+  honors: ["Honors & awards", "Honors and awards", "Honors"],
+  courses: ["Courses"],
+  patents: ["Patents"],
+  organizations: ["Organizations"],
+}
+
+/**
+ * The `/in/{handle}/details/{slug}/` path each section lives at. Split from the
+ * heading text because the two do not match ("Volunteering" is served from
+ * `volunteering-experiences`), and because a wrong slug must fail as "section not
+ * present" rather than as a crash: LinkedIn answers an unknown slug by bouncing
+ * back to the profile, which `readSection` detects.
+ */
+export const SECTION_SLUGS: Record<Exclude<SectionKey, "about">, string> = {
+  experience: "experience",
+  education: "education",
+  skills: "skills",
+  languages: "languages",
+  certifications: "certifications",
+  publications: "publications",
+  projects: "projects",
+  volunteering: "volunteering-experiences",
+  honors: "honors",
+  courses: "courses",
+  patents: "patents",
+  organizations: "organizations",
 }
 
 /** Ad units, footers and helper cards that live inside <main> alongside real content. */
@@ -45,8 +85,25 @@ const JUNK_TEXT =
  * ("Nothing to see for now"). Without this, an empty section exports as two entries. */
 const EMPTY_STATE = /^(nothing to see|no results)|will appear here\.?$/i
 
+/** The same copy, matched anywhere in a page's raw text rather than per line. */
+const EMPTY_STATE_TEXT = /nothing to see|no results|will appear here/i
+
 export function isEmptyState(text: string): boolean {
   return EMPTY_STATE.test(text.trim())
+}
+
+/**
+ * Is this the details page of a section the member never filled in? LinkedIn still
+ * serves a page, with placeholder copy where the rows would be. Telling that apart
+ * from "React has not hydrated yet" is what lets the reader stop waiting instead of
+ * spending its whole polling budget on a section that will never have rows.
+ */
+export function isEmptySection(doc: Document, key: SectionKey): boolean {
+  const root = doc.querySelector("main") ?? doc.body
+  // Cheap test first: this runs on every poll of every section that has no rows yet,
+  // and both `textLines` and `findHeadingBlock` walk the whole page.
+  if (!root || !EMPTY_STATE_TEXT.test(root.textContent ?? "")) return false
+  return Boolean(findHeadingBlock(doc, key))
 }
 
 /** UI chrome that leaks into row text and must never reach the Markdown. */
@@ -57,18 +114,51 @@ const NOISE_LINES: RegExp[] = [
   /^endorse$/i,
   /^endorsed by\b/i,
   /^credential id\b/i,
+  /^no expiration date$/i,
   /^\d[\d,+]*\s+(followers|connections)$/i,
   /^contact info$/i,
+  /^followed by\b/i,
+  /^view (my )?newsletter$/i,
   /^(1st|2nd|3rd\+?)( degree connection)?$/i,
   /mutual connections?$/i,
   /^(message|connect|follow|following|more|pending|book an appointment|open to|add profile section|enhance profile|resources|view as|edit|save)$/i,
   /^\(?(he|she|they|ze|xe)\s*\/\s*\w+\)?$/i,
-  /^[·•]/,
-  /\slogo$/i,
 ]
 
 export function isNoiseLine(line: string): boolean {
   return NOISE_LINES.some((re) => re.test(line))
+}
+
+/** A real bullet in a description. Kept — as Markdown — rather than discarded. */
+const BULLET = /^[•‣▪◦]\s*/
+/** LinkedIn's inline separator, which `textLines` sometimes strands at the start of
+ * a line ("· 1st"). Only the separator goes; the text after it may be real. */
+const LEADING_SEPARATOR = /^[·∙‧]+\s*/
+
+/**
+ * Normalizes one line before it is matched against the noise rules. A middot is
+ * layout, so it is dropped; a bullet is content, so it becomes a Markdown list
+ * marker instead of taking the whole line down with it.
+ */
+export function normalizeLine(line: string): string {
+  if (BULLET.test(line)) return `- ${line.replace(BULLET, "")}`.trimEnd()
+  return line.replace(LEADING_SEPARATOR, "")
+}
+
+/**
+ * Drops "Acme Corp logo" image captions — but only when the row already names that
+ * entity somewhere else. A blanket /\slogo$/ rule also deletes real prose, since a
+ * sentence is free to end in the word "logo".
+ */
+export function dropLogoLines(lines: string[]): string[] {
+  return lines.filter((line) => {
+    const match = /^(.+)\slogo$/i.exec(line)
+    if (!match) return true
+    const entity = match[1].toLowerCase()
+    return !lines.some(
+      (other) => other !== line && other.toLowerCase().includes(entity),
+    )
+  })
 }
 
 const norm = (s: string | null | undefined) =>
@@ -338,6 +428,43 @@ export function entityHints(row: Element): {
       row.querySelector('a[href*="/school/"]')?.getAttribute("href") ?? null,
     imgAlt: row.querySelector("img")?.getAttribute("alt")?.trim() || null,
   }
+}
+
+/**
+ * Text of the `/overlay/` chips `textLines` deliberately strips. The endorsement
+ * count on the skills details page is one of these, so it is invisible to the normal
+ * extractor and has to be read back out here.
+ */
+export function overlayLines(row: Element): string[] {
+  return [...row.querySelectorAll('a[href*="/overlay/"]')].flatMap((el) =>
+    textLines(el),
+  )
+}
+
+/**
+ * Links in the top card that point off LinkedIn — the member's own site, newsletter
+ * or portfolio. LinkedIn wraps some of them in its `/redir/` interstitial, so the
+ * real destination is recovered from the `url` parameter.
+ */
+export function externalLinks(root: Element): string[] {
+  const out: string[] = []
+  for (const anchor of root.querySelectorAll("a[href]")) {
+    const raw = anchor.getAttribute("href") ?? ""
+    let href = raw
+    try {
+      const parsed = new URL(raw, "https://www.linkedin.com")
+      if (parsed.pathname.startsWith("/redir/")) {
+        href = parsed.searchParams.get("url") ?? raw
+      }
+      const { hostname } = new URL(href, "https://www.linkedin.com")
+      if (hostname === "linkedin.com" || hostname.endsWith(".linkedin.com"))
+        continue
+    } catch {
+      continue
+    }
+    if (/^https?:\/\//i.test(href)) out.push(href)
+  }
+  return out
 }
 
 /**

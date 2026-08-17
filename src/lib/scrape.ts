@@ -1,5 +1,7 @@
 import {
+  dropLogoLines,
   entityHints,
+  externalLinks,
   findRows,
   findTopCard,
   findHeadingBlock,
@@ -7,13 +9,18 @@ import {
   isNoiseLine,
   nameFromTitle,
   nestedRows,
+  normalizeLine,
+  overlayLines,
   ownLines,
+  SECTION_TITLES,
   textLines,
+  type SectionKey,
 } from "@/lib/selectors"
 import type {
   CertificationEntry,
   EducationEntry,
   ExperienceEntry,
+  GenericEntry,
   LanguageEntry,
   Profile,
   SkillEntry,
@@ -22,7 +29,10 @@ import type {
 export function isProfileUrl(url: string): boolean {
   try {
     const { hostname, pathname } = new URL(url)
-    return hostname.endsWith("linkedin.com") && /^\/in\/[^/]+/.test(pathname)
+    // Exact host, not a suffix: "evil-linkedin.com".endsWith("linkedin.com") is true.
+    const isLinkedIn =
+      hostname === "linkedin.com" || hostname.endsWith(".linkedin.com")
+    return isLinkedIn && /^\/in\/[^/]+/.test(pathname)
   } catch {
     return false
   }
@@ -38,26 +48,54 @@ export function profileHandle(url: string): string | null {
   }
 }
 
-/** "Mar 2024 - Present · 2 yrs 5 mos", "2009 – 2014", "Issued Mar 2020". */
+/** "Mar 2024 - Present · 2 yrs 5 mos", "2009 – 2014", "Issued Mar 2020",
+ * "Expires Mar 2023". */
 export function isDateRangeLine(line: string): boolean {
   if (!/\b(19|20)\d{2}\b/.test(line)) return false
   return (
-    /[–—-]/.test(line) || /\bpresent\b/i.test(line) || /^issued\b/i.test(line)
+    /[–—-]/.test(line) ||
+    /\bpresent\b/i.test(line) ||
+    /^(issued|expires?|expired)\b/i.test(line)
   )
 }
 
-const clean = (lines: string[]) => lines.filter((line) => !isNoiseLine(line))
+const clean = (lines: string[]) =>
+  dropLogoLines(
+    lines
+      .map(normalizeLine)
+      .filter(Boolean)
+      .filter((line) => !isNoiseLine(line)),
+  )
 
-/** "NVIDIA · Full-time" -> "NVIDIA" */
-const companyName = (line: string) => line.split("·")[0].trim()
+const EMPLOYMENT_TYPE =
+  /^(full[- ]time|part[- ]time|self[- ]employed|freelance|contract|internship|apprenticeship|seasonal|temporary|permanent)$/i
 
-/** The line after the dates: "On-site", "San Jose, California, United States". */
-const looksLikeLocation = (line: string) =>
-  line.length <= 90 &&
-  !/[.!?]$/.test(line) &&
-  (/\b(on-site|remote|hybrid)\b/i.test(line) ||
-    /,/.test(line) ||
-    line.split(" ").length <= 4)
+const segments = (line: string) =>
+  line
+    .split("·")
+    .map((part) => part.trim())
+    .filter(Boolean)
+
+/**
+ * A location is short, unpunctuated, and either explicitly geographic or a
+ * title-cased place name. The old rule accepted any line of four words or fewer,
+ * which quietly promoted a description's opening clause ("Led the platform team")
+ * into the location field.
+ */
+const looksLikeLocation = (line: string) => {
+  if (line.length > 90 || /[.!?]$/.test(line) || line.startsWith("- "))
+    return false
+  if (/\b(on-site|remote|hybrid)\b/i.test(line)) return true
+  if (/,/.test(line)) return true
+  if (/\b(area|region|province|county|metropolitan|greater)\b/i.test(line))
+    return true
+
+  const words = line.split(" ")
+  const isTitleCased = words.every(
+    (word) => /^[A-Z(]/.test(word) || /^(of|the|and|de|du|da|la|le|el)$/i.test(word),
+  )
+  return words.length <= 4 && isTitleCased
+}
 
 function parseRole(
   lines: string[],
@@ -69,24 +107,28 @@ function parseRole(
   const entry: ExperienceEntry = { title }
 
   const dateIdx = rest.findIndex(isDateRangeLine)
-  // A standalone role carries its company between the title and the dates
-  // ("CEO / Parabricks / May 2016 – …"); a grouped sub-role has no company line
-  // of its own and inherits the group's.
-  if (dateIdx > 0) entry.company = companyName(rest[0])
-  else if (fallbackCompany) entry.company = fallbackCompany
+  // Everything between the title and the dates identifies the employer. A standalone
+  // role puts "Acme Corp · Full-time" there; a grouped sub-role puts only the
+  // employment type, and inherits the company from its group header — reading that
+  // line as the company is what used to export roles filed under "Full-time".
+  const head = dateIdx >= 0 ? rest.slice(0, dateIdx) : rest.slice(0, 1)
+  for (const segment of head.flatMap(segments)) {
+    if (EMPLOYMENT_TYPE.test(segment)) entry.employmentType ??= segment
+    else entry.company ??= segment
+  }
+  if (!entry.company && fallbackCompany) entry.company = fallbackCompany
 
+  let cursor = dateIdx >= 0 ? dateIdx : head.length
   if (dateIdx >= 0) {
     entry.dateRange = rest[dateIdx]
-    let descStart = dateIdx + 1
-    if (rest[descStart] && looksLikeLocation(rest[descStart])) {
-      entry.location = rest[descStart]
-      descStart += 1
-    }
-    const description = rest.slice(descStart).join("\n").trim()
-    if (description) entry.description = description
-  } else if (!entry.company && rest.length > 0) {
-    entry.company = companyName(rest[0])
+    cursor = dateIdx + 1
   }
+  if (rest[cursor] && looksLikeLocation(rest[cursor])) {
+    entry.location = rest[cursor]
+    cursor += 1
+  }
+  const description = rest.slice(cursor).join("\n").trim()
+  if (description) entry.description = description
 
   return entry
 }
@@ -101,12 +143,21 @@ function scrapeExperience(doc: Document): ExperienceEntry[] {
       // Several roles at one company: the row's own text is the company header
       // ("NVIDIA / Full-time · 6 yrs 7 mos"), each nested item is a role.
       const header = clean(ownLines(row))
-      const company = header[0]
-        ? companyName(header[0])
-        : (entityHints(row).imgAlt ?? undefined)
+      // The header renders as "Acme Corp / Full-time / 6 yrs 7 mos" across several
+      // lines or joined by separators, depending on the layout — so scan all of it.
+      const headerParts = header.flatMap(segments)
+      const company =
+        headerParts.find((part) => !EMPLOYMENT_TYPE.test(part)) ??
+        entityHints(row).imgAlt ??
+        undefined
+      const employmentType = headerParts.find((part) =>
+        EMPLOYMENT_TYPE.test(part),
+      )
       for (const subRow of subRows) {
         const entry = parseRole(clean(textLines(subRow)), company)
-        if (entry) entries.push(entry)
+        if (!entry) continue
+        if (employmentType) entry.employmentType ??= employmentType
+        entries.push(entry)
       }
       continue
     }
@@ -118,6 +169,31 @@ function scrapeExperience(doc: Document): ExperienceEntry[] {
   return entries
 }
 
+/**
+ * A single date rather than a range. Publications, patents, awards and courses are
+ * stamped with one ("Mar 2021", "2019"), which no range rule matches — leaving the
+ * date to be mistaken for the entry's prose.
+ */
+export function isDateLine(line: string): boolean {
+  return (
+    isDateRangeLine(line) ||
+    /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(19|20)\d{2}$/i.test(
+      line,
+    ) ||
+    /^(19|20)\d{2}$/.test(line)
+  )
+}
+
+/** Splits a row's lines below its title into the date lines and everything else.
+ * Keeping *all* of both is what stops a row's third, fourth and fifth lines — field
+ * of study, grade, activities, an expiry date — from being silently discarded. */
+function partition(rest: string[], isDate = isDateRangeLine) {
+  return {
+    dates: rest.filter(isDate),
+    text: rest.filter((line) => !isDate(line)),
+  }
+}
+
 function scrapeEducation(doc: Document): EducationEntry[] {
   const entries: EducationEntry[] = []
 
@@ -127,10 +203,11 @@ function scrapeEducation(doc: Document): EducationEntry[] {
 
     const [school, ...rest] = lines
     const entry: EducationEntry = { school }
-    const dateIdx = rest.findIndex(isDateRangeLine)
-    if (dateIdx >= 0) entry.dateRange = rest[dateIdx]
-    const degree = rest.filter((_, i) => i !== dateIdx)[0]
-    if (degree) entry.degree = degree
+    const { dates, text } = partition(rest)
+    if (dates.length > 0) entry.dateRange = dates.join(" · ")
+    if (text[0]) entry.degree = text[0]
+    const description = text.slice(1).join("\n").trim()
+    if (description) entry.description = description
     entries.push(entry)
   }
 
@@ -148,9 +225,11 @@ function scrapeSkills(doc: Document): SkillEntry[] {
     seen.add(name.toLowerCase())
 
     const entry: SkillEntry = { name }
-    // "15 endorsements", and "99+ endorsements" once LinkedIn stops counting.
-    const endorsements = lines
-      .map((line) => /^(\d+\+?)\s+endorsements?$/i.exec(line))
+    // "15 endorsements", and "99+ endorsements" once LinkedIn stops counting. The
+    // count renders as an /overlay/ chip, which `textLines` strips — so the row's
+    // overlay text has to be read back in, or every count goes missing.
+    const endorsements = [...lines, ...overlayLines(row)]
+      .map((line) => /^(\d[\d,]*\+?)\s+endorsements?$/i.exec(line))
       .find(Boolean)
     if (endorsements) entry.endorsements = endorsements[1]
     entries.push(entry)
@@ -177,15 +256,45 @@ function scrapeCertifications(doc: Document): CertificationEntry[] {
   const entries: CertificationEntry[] = []
 
   for (const row of findRows(doc, "certifications")) {
+    const raw = textLines(row).map(normalizeLine).filter(Boolean)
     const lines = clean(textLines(row))
     if (lines.length === 0) continue
 
     const [title, ...rest] = lines
     const entry: CertificationEntry = { title }
-    const dateIdx = rest.findIndex(isDateRangeLine)
-    if (dateIdx >= 0) entry.dateRange = rest[dateIdx]
-    const issuer = rest.filter((_, i) => i !== dateIdx)[0]
-    if (issuer) entry.issuer = issuer
+    const { dates, text } = partition(rest)
+    if (dates.length > 0) entry.dateRange = dates.join(" · ")
+    if (text[0]) entry.issuer = text[0]
+    const description = text.slice(1).join("\n").trim()
+    if (description) entry.description = description
+    // The credential ID is filtered as noise before it reaches `lines`, so it is
+    // recovered from the row's raw text rather than left out of the export.
+    const credential = raw
+      .map((line) => /^credential id\s*[:·-]?\s*(.+)$/i.exec(line))
+      .find(Boolean)
+    if (credential) entry.credentialId = credential[1].trim()
+    entries.push(entry)
+  }
+
+  return entries
+}
+
+/** Publications, projects, volunteering, honors, courses, patents, organizations —
+ * all render as title / subtitle / dates / prose, so one parser covers them. */
+function scrapeGeneric(doc: Document, key: SectionKey): GenericEntry[] {
+  const entries: GenericEntry[] = []
+
+  for (const row of findRows(doc, key)) {
+    const lines = clean(textLines(row))
+    if (lines.length === 0) continue
+
+    const [title, ...rest] = lines
+    const entry: GenericEntry = { title }
+    const { dates, text } = partition(rest, isDateLine)
+    if (dates.length > 0) entry.dateRange = dates.join(" · ")
+    if (text[0]) entry.subtitle = text[0]
+    const description = text.slice(1).join("\n").trim()
+    if (description) entry.description = description
     entries.push(entry)
   }
 
@@ -214,59 +323,102 @@ function scrapeAbout(doc: Document): string | undefined {
   return text || undefined
 }
 
+/** Strips LinkedIn's click-tracking so the same site does not appear twice, once as
+ * link text and once as an instrumented href. */
+export function canonicalUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    for (const key of ["trk", "trkInfo", "originalSubdomain", "original_referer"])
+      parsed.searchParams.delete(key)
+    const search = parsed.searchParams.toString()
+    const path = parsed.pathname.replace(/\/$/, "")
+    return `${parsed.origin}${path}${search ? `?${search}` : ""}${parsed.hash}`
+  } catch {
+    return url.replace(/\/$/, "")
+  }
+}
+
+/** The location line in a top card: geographic, unpunctuated, and never a URL. */
+const looksLikeProfileLocation = (line: string) =>
+  !/^https?:\/\//i.test(line) &&
+  line.length <= 90 &&
+  !/[.!?]$/.test(line) &&
+  (/,/.test(line) ||
+    /\b(area|region|province|county|metropolitan|greater)\b/i.test(line))
+
 export function scrapeHeader(
   doc: Document,
-): Pick<Profile, "name"> & Partial<Pick<Profile, "headline" | "location">> {
+): Pick<Profile, "name" | "websites"> &
+  Partial<Pick<Profile, "headline" | "location">> {
   const nameEl = findNameElement(doc)
   const name = (nameEl ? textLines(nameEl)[0] : "") || nameFromTitle(doc)
   const topCard = findTopCard(doc)
-  if (!topCard) return { name }
+  if (!topCard) return { name, websites: [] }
 
   const rawLines = textLines(topCard)
 
-  // The top card also shows the current company and school as chips, and they sit
-  // between the headline and the location. They carry no link, no logo alt, nothing
-  // to select on — but they are the only thing on the card rendered *twice*: once as
-  // a combined "Acme Corp · Example University" line and again as standalone lines.
-  // That duplication is what tells a chip apart from a location.
-  const parts = (line: string) =>
-    line
-      .split("·")
-      .map((part) => part.trim())
-      .filter(Boolean)
+  // The top card shows the current company and school as chips, which sit right where
+  // the location does and carry no link or class to select on. Two things give them
+  // away, and both are needed: a card with several chips renders them once combined
+  // ("Acme Corp · Example University") and again standing alone, while a card with a
+  // single chip renders that one chip *twice*. Matching only the first pattern is
+  // what used to export "Gates Foundation" as Bill Gates's location.
+  const occurrences = new Map<string, number>()
+  for (const line of rawLines)
+    occurrences.set(line, (occurrences.get(line) ?? 0) + 1)
+
   const chipNames = new Set<string>()
   for (const line of rawLines) {
-    const segments = parts(line)
-    if (segments.length < 2) continue
-    const everySegmentStandsAlone = segments.every((segment) =>
-      rawLines.some((other) => other !== line && other === segment),
-    )
-    if (everySegmentStandsAlone)
-      for (const segment of segments) chipNames.add(segment)
+    const parts = segments(line)
+    if (parts.length >= 2) {
+      const everySegmentStandsAlone = parts.every((segment) =>
+        rawLines.some((other) => other !== line && other === segment),
+      )
+      if (everySegmentStandsAlone) for (const part of parts) chipNames.add(part)
+    }
+    // A repeated line is a chip — unless it reads as a place, since losing a real
+    // location is worse than leaving a duplicate company name in the card.
+    if (
+      (occurrences.get(line) ?? 0) > 1 &&
+      line !== name &&
+      !looksLikeProfileLocation(line)
+    ) {
+      chipNames.add(line)
+    }
   }
   const isChip = (line: string) =>
-    chipNames.size > 0 && parts(line).every((part) => chipNames.has(part))
+    chipNames.size > 0 && segments(line).every((part) => chipNames.has(part))
 
   const usable = (line: string) =>
     !line.startsWith(name) && !isChip(line) && !/contact info/i.test(line)
 
-  // Headline first, then the location: the next real line under it. Everything else
-  // in the card — degree badge, follower counts, action buttons — is noise.
+  // Headline first, then the location: the first line under it that reads like a
+  // place, falling back to simple order when nothing does (a bare "London" carries
+  // no geographic marker of its own).
   const nameIdx = rawLines.findIndex((line) => line.startsWith(name))
   const below = clean(rawLines.slice(nameIdx + 1)).filter(usable)
-  // A dangling "·" separator often shares the line with the location.
   const trimSeparators = (line?: string) =>
     line?.replace(/^[·•\s]+|[·•\s]+$/g, "") || undefined
+
+  const beneathHeadline = below.slice(1)
+  const location =
+    beneathHeadline.find(looksLikeProfileLocation) ?? beneathHeadline[0]
+
+  const websites = new Set<string>()
+  for (const href of externalLinks(topCard)) websites.add(canonicalUrl(href))
+  for (const line of rawLines)
+    if (/^https?:\/\/\S+$/i.test(line)) websites.add(canonicalUrl(line))
 
   return {
     name,
     headline: trimSeparators(below[0]),
-    location: trimSeparators(below[1]),
+    location: trimSeparators(location),
+    websites: [...websites],
   }
 }
 
-/** Sections that live on their own /details/{slug}/ page. */
-export const DETAIL_SECTIONS = [
+/** Sections with a bespoke shape on the Profile. */
+export const CORE_SECTIONS = [
   "experience",
   "education",
   "skills",
@@ -274,26 +426,65 @@ export const DETAIL_SECTIONS = [
   "certifications",
 ] as const
 
+/** Sections that land in `Profile.extras` as generic entries. Most members have none
+ * of these, which is exactly why reading them has to be cheap — see `isEmptySection`. */
+export const EXTRA_SECTIONS = [
+  "publications",
+  "projects",
+  "volunteering",
+  "honors",
+  "courses",
+  "patents",
+  "organizations",
+] as const
+
+/** Sections that live on their own /details/{slug}/ page. */
+export const DETAIL_SECTIONS = [...CORE_SECTIONS, ...EXTRA_SECTIONS] as const
+
+export type CoreSection = (typeof CORE_SECTIONS)[number]
+export type ExtraSectionKey = (typeof EXTRA_SECTIONS)[number]
 export type DetailSection = (typeof DETAIL_SECTIONS)[number]
 
-const SECTION_SCRAPERS = {
+const SECTION_SCRAPERS: Record<DetailSection, (doc: Document) => unknown[]> = {
   experience: scrapeExperience,
   education: scrapeEducation,
   skills: scrapeSkills,
   languages: scrapeLanguages,
   certifications: scrapeCertifications,
-} as const
+  ...Object.fromEntries(
+    EXTRA_SECTIONS.map((key) => [
+      key,
+      (doc: Document) => scrapeGeneric(doc, key),
+    ]),
+  ),
+} as Record<DetailSection, (doc: Document) => unknown[]>
+
+/** The heading a generic section gets in the Markdown. */
+export function sectionTitle(key: DetailSection): string {
+  return SECTION_TITLES[key][0]
+}
 
 /**
  * Reads one section out of whatever document it is given — the main profile for
  * layouts that still render sections inline, or the section's own /details/ page.
  * Pure over the Document so it can be tested against saved fixtures.
  */
-export function scrapeSection<K extends DetailSection>(
+export function scrapeSection<K extends CoreSection>(
   doc: Document,
   key: K,
-): Profile[K] {
-  return SECTION_SCRAPERS[key](doc) as Profile[K]
+): Profile[K]
+export function scrapeSection(
+  doc: Document,
+  key: ExtraSectionKey,
+): GenericEntry[]
+export function scrapeSection(doc: Document, key: DetailSection): unknown[] {
+  return SECTION_SCRAPERS[key](doc)
+}
+
+/** Untyped access for callers that loop over every section and sort the results out
+ * afterwards — the content script does exactly that. */
+export function scrapeAnySection(doc: Document, key: DetailSection): unknown[] {
+  return SECTION_SCRAPERS[key](doc)
 }
 
 /** The header and About, which only ever exist on the main profile page. */
@@ -307,6 +498,8 @@ export function scrapeMainProfile(doc: Document, url: string): Profile {
     skills: [],
     languages: [],
     certifications: [],
+    extras: [],
+    warnings: [],
     scrapedAt: new Date().toISOString(),
   }
 }
@@ -318,6 +511,7 @@ export function hasContent(profile: Profile): boolean {
     profile.education.length ||
     profile.skills.length ||
     profile.languages.length ||
-    profile.certifications.length,
+    profile.certifications.length ||
+    profile.extras.some((section) => section.entries.length),
   )
 }

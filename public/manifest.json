@@ -4,7 +4,11 @@
   "version": "0.1.0",
   "description": "Turn a LinkedIn profile into clean Markdown. Copy it or download it as a .md file.",
   "homepage_url": "https://github.com/mehradamiri/linkedin-md",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
   "action": {
     "default_title": "LinkedIn to Markdown",
     "default_popup": "index.html",
